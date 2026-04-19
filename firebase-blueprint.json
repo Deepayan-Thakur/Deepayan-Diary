@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "Book": {
+      "title": "A memory collection",
+      "description": "Each book contains a series of pages or memories.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The title of the book" },
+        "description": { "type": "string", "description": "Optional short description" },
+        "coverColor": { "type": "string", "description": "The hex color or theme for the book cover" },
+        "userId": { "type": "string", "description": "The owner of the book" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "userId", "createdAt"]
+    },
+    "Page": {
+      "title": "A memory page",
+      "description": "A single entry within a book.",
+      "type": "object",
+      "properties": {
+        "bookId": { "type": "string", "description": "The ID of the parent book" },
+        "content": { 
+          "type": "array", 
+          "description": "A sequence of content blocks (text or image bundle)"
+        },
+        "pageNumber": { "type": "integer" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" }
+      },
+      "required": ["bookId", "content", "userId", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/books/{bookId}": {
+      "schema": "Book",
+      "description": "Collection of all memory books"
+    },
+    "/books/{bookId}/pages/{pageId}": {
+      "schema": "Page",
+      "description": "Pages belonging to a specific book"
+    }
+  }
+}

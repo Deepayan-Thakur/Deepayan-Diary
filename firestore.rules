@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 3. Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // 1. Books Collection
+    match /books/{bookId} {
+      function isValidBook(data) {
+        let hasRequired = data.keys().hasAll(['title', 'userId', 'createdAt']);
+        let titleValid = data.title is string && data.title.size() <= 200;
+        let categoryValid = !('category' in data.keys()) || (data.category is string && data.category.size() <= 200);
+        let coverColorValid = !('coverColor' in data.keys()) || (data.coverColor is string && data.coverColor.size() <= 50);
+        let descriptionValid = !('description' in data.keys()) || (data.description is string && data.description.size() <= 1000);
+        
+        return hasRequired && titleValid && categoryValid && coverColorValid && descriptionValid &&
+               data.userId == request.auth.uid;
+      }
+
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidBook(request.resource.data) && request.resource.data.createdAt == request.time;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && 
+                       isValidBook(request.resource.data) &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'coverColor', 'description', 'category', 'updatedAt']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      // 2. Pages (Subcollection)
+      match /pages/{pageId} {
+        function isValidPage(data) {
+          let hasRequired = data.keys().hasAll(['bookId', 'content', 'userId', 'timestamp']);
+          let contentValid = data.content is list && data.content.size() <= 100;
+          let titleValid = !('chapterTitle' in data.keys()) || (data.chapterTitle is string && data.chapterTitle.size() <= 200);
+          let detailsValid = !('chapterDetails' in data.keys()) || (data.chapterDetails is string && data.chapterDetails.size() <= 1000);
+          let pageNumValid = !('pageNumber' in data.keys()) || (data.pageNumber is number);
+
+          return hasRequired && contentValid && titleValid && detailsValid && pageNumValid &&
+                 data.bookId == bookId &&
+                 data.userId == request.auth.uid;
+        }
+
+        allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+        allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+        allow create: if isSignedIn() && isValidPage(request.resource.data) && request.resource.data.timestamp == request.time;
+        allow update: if isSignedIn() && resource.data.userId == request.auth.uid && 
+                         isValidPage(request.resource.data) &&
+                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'pageNumber', 'chapterTitle', 'chapterDetails', 'timestamp']);
+        allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      }
+    }
+  }
+}
