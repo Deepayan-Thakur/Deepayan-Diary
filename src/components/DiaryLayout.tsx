@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, where, updateDoc, doc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../lib/firebase';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, updateDoc, doc, where } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { useAuth } from '../App';
 import { Book, Page, ContentBlock } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, Plus, Trash2, ArrowLeft, Type, ImageIcon, Layers, Save, Loader2, Upload, List, BookOpen, Edit2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Trash2, ArrowLeft, Type, ImageIcon, Layers, Save, Loader2, List, BookOpen, Edit2 } from 'lucide-react';
 import { useSound } from '../hooks/useSound';
 import { ImageBundle } from './ImageBundle';
-import imageCompression from 'browser-image-compression';
 
 interface Props {
   book: Book;
@@ -24,7 +22,6 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
   const [editChapterTitle, setEditChapterTitle] = useState('');
   const [editChapterDetails, setEditChapterDetails] = useState('');
   const [newContent, setNewContent] = useState<ContentBlock[]>([]);
-  const [uploading, setUploading] = useState(false);
   const { playSound } = useSound();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -262,45 +259,6 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
     setNewContent(prev => prev.map(c => c.id === id ? { ...c, value } : c));
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, blockId: string, isBundle: boolean = false) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length || !user) return;
-    setUploading(true);
-    try {
-      const options = {
-        maxSizeMB: 0.8, // compress to max 800 KB
-        maxWidthOrHeight: 1920,
-        useWebWorker: true
-      };
-
-      const uploadedUrls = await Promise.all(
-        files.map(async (file: File) => {
-          // Compress the file before uploading
-          const compressedFile = await imageCompression(file, options);
-          const storageRef = ref(storage, `images/${user.uid}/${Date.now()}_${compressedFile.name}`);
-          await uploadBytes(storageRef, compressedFile);
-          return await getDownloadURL(storageRef);
-        })
-      );
-      if (isBundle) {
-        setNewContent(prev => prev.map(c => {
-          if (c.id === blockId) {
-            const currentArray = (c.value as string[]) || [];
-            return { ...c, value: [...currentArray, ...uploadedUrls] };
-          }
-          return c;
-        }));
-      } else {
-        updateBlock(blockId, uploadedUrls[0]);
-      }
-    } catch (error) {
-      console.error(error);
-      alert("Image upload failed.");
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const pageVariants = {
     initial: (direction: number) => ({
       originX: direction > 0 ? 1 : 0,
@@ -463,33 +421,74 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
             />
           )}
           {block.type === 'image' && (
-            <div className="text-center w-full py-4 my-4 bg-white/50 dark:bg-black/20 rounded-lg border border-dashed border-[#ece6da] dark:border-[#333] flex flex-col items-center justify-center">
-              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-[#1a1a1a] border border-[#ece6da] dark:border-[#444] rounded-full text-xs font-sans uppercase tracking-widest hover:shadow-md transition-all dark:text-white">
-                {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                <span>Upload Image</span>
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, block.id, false)} disabled={uploading} />
-              </label>
-              {block.value && typeof block.value === 'string' && (
+            <div className="w-full py-4 my-4 bg-white/50 dark:bg-black/20 rounded-lg px-4 border border-[#ece6da] dark:border-[#333]">
+              <input
+                type="url"
+                placeholder="Paste Image URL here..."
+                className="w-full bg-transparent border-b border-[#ece6da] dark:border-[#333] pb-2 text-sm outline-none dark:text-white"
+                value={block.value as string || ''}
+                onChange={(e) => updateBlock(block.id, e.target.value)}
+              />
+              {block.value && typeof block.value === 'string' && block.value.length > 5 && (
                 <div className="mt-4 flex justify-center max-h-[40vh] overflow-hidden">
                   <DecoratedImage url={block.value} playSound={playSound} />
                 </div>
               )}
             </div>
           )}
-          {block.type === 'bundle' && (
-            <div className="text-center w-full py-4 my-4 bg-white/50 dark:bg-black/20 rounded-lg border border-dashed border-[#ece6da] dark:border-[#333] flex flex-col items-center justify-center">
-              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-[#1a1a1a] border border-[#ece6da] dark:border-[#444] rounded-full text-xs font-sans uppercase tracking-widest hover:shadow-md transition-all dark:text-white">
-                {uploading ? <Loader2 size={16} className="animate-spin" /> : <Layers size={16} />}
-                <span>Upload Collection</span>
-                <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFileUpload(e, block.id, true)} disabled={uploading} />
-              </label>
-              {(block.value as string[]).length > 0 && (
-                <div className="mt-2 text-xs font-mono uppercase opacity-50 dark:text-white">
-                  {(block.value as string[]).length} memories packaged
+          {block.type === 'bundle' && (() => {
+            const urls = (block.value as string[]) || [];
+            return (
+              <div className="w-full py-4 my-4 bg-white/50 dark:bg-black/20 rounded-lg px-4 border border-[#ece6da] dark:border-[#333]">
+                <div className="flex w-full flex-col sm:flex-row gap-2 mb-4">
+                  <input
+                    type="url"
+                    placeholder="Paste Image URL and press Enter..."
+                    className="flex-1 bg-transparent border-b border-[#ece6da] dark:border-[#333] pb-2 text-sm outline-none dark:text-white"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value;
+                        if (val) {
+                          updateBlock(block.id, [...urls, val]);
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={(e) => {
+                      const input = e.currentTarget.previousSibling as HTMLInputElement;
+                      if (input.value) {
+                        updateBlock(block.id, [...urls, input.value]);
+                        input.value = '';
+                      }
+                    }}
+                    className="px-3 py-1 bg-black text-white dark:bg-white dark:text-black rounded text-xs"
+                  >Add to Collection</button>
                 </div>
-              )}
-            </div>
-          )}
+                {urls.length > 0 && (
+                  <div className="w-full flex flex-col gap-2 mb-4 max-h-32 overflow-y-auto">
+                    {urls.map((u, i) => (
+                      <div key={i} className="flex justify-between items-center text-[10px] sm:text-xs opacity-70 bg-black/5 dark:bg-white/5 p-2 rounded">
+                        <span className="truncate max-w-[200px] sm:max-w-[300px]">{u}</span>
+                        <button onClick={() => updateBlock(block.id, urls.filter((_, idx) => idx !== i))} className="text-red-500 hover:text-red-700 ml-2"><Trash2 size={12} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {urls.length > 0 && (
+                  <div className="mt-2 text-xs font-mono uppercase opacity-50 dark:text-white mb-4">
+                    {urls.length} memories packaged
+                  </div>
+                )}
+                {urls.length > 0 && (
+                  <div className="flex justify-center scale-90 origin-top sm:scale-100">
+                    <ImageBundle urls={urls} playSound={playSound} />
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <button
             onClick={() => setNewContent(prev => prev.filter(c => c.id !== block.id))}
             onMouseEnter={() => playSound('hover')}
@@ -676,10 +675,9 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
           </button>
           <button
             onClick={savePage}
-            disabled={uploading}
             className="px-8 py-2 bg-[#1a1a1a] dark:bg-[#e0e0e0] text-white dark:text-[#121212] rounded-full shadow-md hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2 text-sm font-bold uppercase tracking-widest disabled:opacity-50 disabled:hover:scale-100"
           >
-            {uploading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            <Save size={16} />
             <span>Store</span>
           </button>
         </motion.div>
