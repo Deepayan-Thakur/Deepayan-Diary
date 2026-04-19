@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Plus, Trash2, ArrowLeft, Type, ImageIcon, Layers, Save, Loader2, Upload, List, BookOpen, Edit2 } from 'lucide-react';
 import { useSound } from '../hooks/useSound';
 import { ImageBundle } from './ImageBundle';
+import imageCompression from 'browser-image-compression';
 
 interface Props {
   book: Book;
@@ -42,7 +43,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
         setCharsPerPage(1800); // Massive capacity for dual A4
       } else {
         setIsTwoPageLayout(false);
-        if (window.innerWidth < 640) setCharsPerPage(750); 
+        if (window.innerWidth < 640) setCharsPerPage(750);
         else setCharsPerPage(1100);
       }
     };
@@ -103,7 +104,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
           let text = block.value as string || '';
           while (text.length > 0) {
             const charsLeft = (1 - capacity) * charsPerPage;
-            
+
             if (charsLeft < 50 && text.length > 50) {
               advance();
               continue;
@@ -118,7 +119,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
               const lookback = text.substring(Math.floor(splitIndex * 0.7), splitIndex);
               const nl = lookback.lastIndexOf('\n');
               const sp = lookback.lastIndexOf(' ');
-              
+
               if (nl !== -1) splitIndex = Math.floor(splitIndex * 0.7) + nl + 1;
               else if (sp !== -1) splitIndex = Math.floor(splitIndex * 0.7) + sp;
 
@@ -126,7 +127,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
 
               const chunk = text.substring(0, splitIndex);
               text = text.substring(splitIndex).trimStart();
-              
+
               currentVPage.content.push({ ...block, id: `${block.id}-${vPages.length}`, value: chunk });
               advance();
             }
@@ -201,7 +202,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
   const handleEditPage = (sourcePageId: string) => {
     const originalPage = pages.find(p => p.id === sourcePageId);
     if (!originalPage) return;
-    
+
     setTurnDirection(1);
     setEditingPageId(sourcePageId);
     setIsEditing(true);
@@ -223,11 +224,11 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
 
   const savePage = async () => {
     if (!user) return;
-    
+
     const payload: any = {
       content: newContent.filter(c => {
-         if (c.type === 'bundle') return (c.value as string[]).length > 0;
-         return c.value !== '';
+        if (c.type === 'bundle') return (c.value as string[]).length > 0;
+        return c.value !== '';
       }),
     };
 
@@ -243,7 +244,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
       payload.timestamp = serverTimestamp();
       await addDoc(collection(db, 'books', book.id, 'pages'), payload);
     }
-    
+
     setTurnDirection(1);
     setIsEditing(false);
     setEditingPageId(null);
@@ -266,10 +267,18 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
     if (!files.length || !user) return;
     setUploading(true);
     try {
+      const options = {
+        maxSizeMB: 0.8, // compress to max 800 KB
+        maxWidthOrHeight: 1920,
+        useWebWorker: true
+      };
+
       const uploadedUrls = await Promise.all(
         files.map(async (file: File) => {
-          const storageRef = ref(storage, `images/${user.uid}/${Date.now()}_${file.name}`);
-          await uploadBytes(storageRef, file);
+          // Compress the file before uploading
+          const compressedFile = await imageCompression(file, options);
+          const storageRef = ref(storage, `images/${user.uid}/${Date.now()}_${compressedFile.name}`);
+          await uploadBytes(storageRef, compressedFile);
           return await getDownloadURL(storageRef);
         })
       );
@@ -294,7 +303,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
 
   const pageVariants = {
     initial: (direction: number) => ({
-      originX: direction > 0 ? 1 : 0, 
+      originX: direction > 0 ? 1 : 0,
       rotateY: direction > 0 ? 120 : -120,
       filter: "brightness(0.6) drop-shadow(0px 30px 40px rgba(0,0,0,0.5))",
       opacity: 0,
@@ -331,13 +340,13 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
     if (page === 'cover') {
       return (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
-           <BookOpen size={48} className="mb-6 opacity-20 dark:text-white" />
-           <h1 className="text-3xl sm:text-5xl font-serif font-bold dark:text-white mb-4 tracking-tight">{book.title}</h1>
-           <p className="text-xs uppercase tracking-widest opacity-50 dark:text-gray-400">Front Cover</p>
+          <BookOpen size={48} className="mb-6 opacity-20 dark:text-white" />
+          <h1 className="text-3xl sm:text-5xl font-serif font-bold dark:text-white mb-4 tracking-tight">{book.title}</h1>
+          <p className="text-xs uppercase tracking-widest opacity-50 dark:text-gray-400">Front Cover</p>
         </div>
       );
     }
-    
+
     if (!page) {
       return (
         <div className="flex-1 flex flex-col items-center justify-center text-center opacity-30 italic font-serif">
@@ -350,23 +359,23 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
     if (page.isChapterCover) {
       return (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6 relative group/cover">
-           <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.3em] opacity-40 dark:text-gray-400 mb-8 border-b border-black/10 dark:border-white/10 pb-4 w-1/3 mx-auto">Chapter Intro</p>
-           <h2 className="text-3xl sm:text-4xl font-serif font-bold dark:text-white mb-6 leading-tight max-w-[90%]">{page.chapterTitle}</h2>
-           {page.chapterDetails && (
-             <p className="text-sm sm:text-base font-serif italic opacity-70 dark:text-gray-300 max-w-[80%] mx-auto leading-relaxed">{page.chapterDetails}</p>
-           )}
-           <div className="absolute bottom-12 text-[10px] sm:text-xs opacity-30 font-serif uppercase tracking-widest dark:text-white">
-             {new Date(page.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-           </div>
-           
-           {!isEditing && (
-             <button 
-               onClick={(e) => { e.stopPropagation(); handleEditPage(page.sourcePageId); }}
-               className="absolute top-4 right-4 p-2 opacity-0 group-hover/cover:opacity-50 hover:!opacity-100 transition-opacity dark:text-white pointer-events-auto z-[60]"
-             >
-               <Edit2 size={16} />
-             </button>
-           )}
+          <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.3em] opacity-40 dark:text-gray-400 mb-8 border-b border-black/10 dark:border-white/10 pb-4 w-1/3 mx-auto">Chapter Intro</p>
+          <h2 className="text-3xl sm:text-4xl font-serif font-bold dark:text-white mb-6 leading-tight max-w-[90%]">{page.chapterTitle}</h2>
+          {page.chapterDetails && (
+            <p className="text-sm sm:text-base font-serif italic opacity-70 dark:text-gray-300 max-w-[80%] mx-auto leading-relaxed">{page.chapterDetails}</p>
+          )}
+          <div className="absolute bottom-12 text-[10px] sm:text-xs opacity-30 font-serif uppercase tracking-widest dark:text-white">
+            {new Date(page.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+          </div>
+
+          {!isEditing && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleEditPage(page.sourcePageId); }}
+              className="absolute top-4 right-4 p-2 opacity-0 group-hover/cover:opacity-50 hover:!opacity-100 transition-opacity dark:text-white pointer-events-auto z-[60]"
+            >
+              <Edit2 size={16} />
+            </button>
+          )}
         </div>
       );
     }
@@ -374,50 +383,50 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
     return (
       <div className={`flex-1 flex flex-col justify-start overflow-hidden relative z-50 w-full ${isTwoPageLayout ? 'max-w-[600px]' : 'max-w-[800px]'} mx-auto group/page pr-2`}>
         {!isEditing && (
-           <button 
-             onClick={(e) => { e.stopPropagation(); handleEditPage(page.sourcePageId); }}
-             className="absolute top-2 right-0 p-2 opacity-0 group-hover/page:opacity-50 hover:!opacity-100 transition-opacity dark:text-white pointer-events-auto z-[60]"
-           >
-             <Edit2 size={16} />
-           </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleEditPage(page.sourcePageId); }}
+            className="absolute top-2 right-0 p-2 opacity-0 group-hover/page:opacity-50 hover:!opacity-100 transition-opacity dark:text-white pointer-events-auto z-[60]"
+          >
+            <Edit2 size={16} />
+          </button>
         )}
         <div className="flex-1 overflow-y-auto pointer-events-auto book-scroll hide-scrollbar mt-4 pt-10">
           {page.content.map((block: any, idx: number) => (
-          <div key={idx} className="mb-4 sm:mb-6 flex-shrink-0 break-words w-full">
-            {block.type === 'text' && (
-              <p className="text-base sm:text-[17px] font-serif leading-relaxed opacity-[0.85] dark:text-[#E0E0E0] whitespace-pre-wrap">
-                {block.value}
-              </p>
-            )}
-            {block.type === 'image' && (
-              <div className="flex justify-center my-4 sm:my-6 relative max-h-[40vh]">
-                <DecoratedImage url={block.value as string} playSound={playSound} />
-              </div>
-            )}
-            {block.type === 'bundle' && (
-              <div className="my-4 sm:my-6 flex justify-center scale-75 origin-top sm:scale-100">
-                 <ImageBundle urls={block.value as string[]} playSound={playSound} />
-              </div>
-            )}
-          </div>
-        ))}
+            <div key={idx} className="mb-4 sm:mb-6 flex-shrink-0 break-words w-full">
+              {block.type === 'text' && (
+                <p className="text-base sm:text-[17px] font-serif leading-relaxed opacity-[0.85] dark:text-[#E0E0E0] whitespace-pre-wrap">
+                  {block.value}
+                </p>
+              )}
+              {block.type === 'image' && (
+                <div className="flex justify-center my-4 sm:my-6 relative max-h-[40vh]">
+                  <DecoratedImage url={block.value as string} playSound={playSound} />
+                </div>
+              )}
+              {block.type === 'bundle' && (
+                <div className="my-4 sm:my-6 flex justify-center scale-75 origin-top sm:scale-100">
+                  <ImageBundle urls={block.value as string[]} playSound={playSound} />
+                </div>
+              )}
+            </div>
+          ))}
         </div>
 
         <div className="mt-auto pt-6 border-t border-black/5 dark:border-white/5 text-[10px] sm:text-xs opacity-40 font-serif flex justify-between items-center z-10 dark:text-white mt-12 pointer-events-none">
           {side === 'right' || side === 'single' ? (
-             <>
-               <span className="tracking-widest invisible sm:visible">MK</span>
-               <span className="mx-auto sm:mx-0 uppercase tracking-widest">
-                 {new Date(page.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-               </span>
-             </>
+            <>
+              <span className="tracking-widest invisible sm:visible">MK</span>
+              <span className="mx-auto sm:mx-0 uppercase tracking-widest">
+                {new Date(page.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+              </span>
+            </>
           ) : (
-             <>
-               <span className="mx-auto sm:mx-0 uppercase tracking-widest">
-                 {new Date(page.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-               </span>
-               <span className="tracking-widest invisible sm:visible">MK</span>
-             </>
+            <>
+              <span className="mx-auto sm:mx-0 uppercase tracking-widest">
+                {new Date(page.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+              </span>
+              <span className="tracking-widest invisible sm:visible">MK</span>
+            </>
           )}
         </div>
       </div>
@@ -427,7 +436,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
   const renderEditor = () => (
     <div className="flex-1 flex flex-col items-center overflow-y-auto book-scroll pb-16 z-50 px-2 pointer-events-auto">
       <div className="w-full flex-shrink-0 mb-6 border-b border-black/5 dark:border-white/5 pb-6 mt-4">
-        <input 
+        <input
           type="text"
           placeholder="Chapter Intro Title (e.g. Chapter 1)"
           value={editChapterTitle}
@@ -445,7 +454,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
       {newContent.map((block) => (
         <div key={block.id} className="group relative w-full flex-shrink-0 min-h-[100px] flex items-center justify-center">
           {block.type === 'text' && (
-            <textarea 
+            <textarea
               className="w-full h-full min-h-[200px] bg-transparent border border-transparent focus:border-[#ece6da] dark:focus:border-[#333] focus:ring-0 text-base sm:text-xl font-serif leading-relaxed resize-none placeholder:opacity-20 dark:text-[#EAEAEA] placeholder:dark:text-white/20 outline-none p-2 sm:p-4"
               placeholder="Pen your thoughts here..."
               value={block.value as string}
@@ -469,22 +478,22 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
           )}
           {block.type === 'bundle' && (
             <div className="text-center w-full py-4 my-4 bg-white/50 dark:bg-black/20 rounded-lg border border-dashed border-[#ece6da] dark:border-[#333] flex flex-col items-center justify-center">
-               <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-[#1a1a1a] border border-[#ece6da] dark:border-[#444] rounded-full text-xs font-sans uppercase tracking-widest hover:shadow-md transition-all dark:text-white">
+              <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-[#1a1a1a] border border-[#ece6da] dark:border-[#444] rounded-full text-xs font-sans uppercase tracking-widest hover:shadow-md transition-all dark:text-white">
                 {uploading ? <Loader2 size={16} className="animate-spin" /> : <Layers size={16} />}
                 <span>Upload Collection</span>
                 <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFileUpload(e, block.id, true)} disabled={uploading} />
               </label>
               {(block.value as string[]).length > 0 && (
                 <div className="mt-2 text-xs font-mono uppercase opacity-50 dark:text-white">
-                  { (block.value as string[]).length } memories packaged
+                  {(block.value as string[]).length} memories packaged
                 </div>
               )}
             </div>
           )}
-          <button 
-             onClick={() => setNewContent(prev => prev.filter(c => c.id !== block.id))}
-             onMouseEnter={() => playSound('hover')}
-             className="absolute right-0 sm:right-2 top-0 sm:top-2 p-2 text-red-400 hover:text-red-600 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-[#1a1a1a] rounded-full shadow-sm border border-red-100 dark:border-red-900 z-50"
+          <button
+            onClick={() => setNewContent(prev => prev.filter(c => c.id !== block.id))}
+            onMouseEnter={() => playSound('hover')}
+            className="absolute right-0 sm:right-2 top-0 sm:top-2 p-2 text-red-400 hover:text-red-600 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-[#1a1a1a] rounded-full shadow-sm border border-red-100 dark:border-red-900 z-50"
           >
             <Trash2 size={16} />
           </button>
@@ -508,7 +517,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
     <div className="w-full mx-auto px-2 sm:px-4 pb-24 overflow-hidden min-h-screen flex flex-col" ref={containerRef}>
       <div className="max-w-7xl mx-auto w-full mb-4 sm:mb-8 flex items-center justify-between z-10 px-4">
         <div className="w-32 flex items-center gap-4 relative">
-          <button 
+          <button
             onClick={() => { playSound('click'); onBack(); }}
             onMouseEnter={() => playSound('hover')}
             className="flex items-center gap-2 text-sm opacity-50 hover:opacity-100 transition-opacity dark:text-white"
@@ -518,7 +527,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
           </button>
           {!isEditing && virtualPages.length > 0 && (
             <div className="relative">
-              <button 
+              <button
                 onClick={() => { playSound('click'); setShowChapters(!showChapters); }}
                 onMouseEnter={() => playSound('hover')}
                 className="flex items-center gap-2 text-sm opacity-50 hover:opacity-100 transition-opacity dark:text-white"
@@ -528,28 +537,28 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
               </button>
               {showChapters && (
                 <div className="absolute top-10 left-0 w-48 bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur-md shadow-2xl rounded-xl py-2 border border-black/5 dark:border-white/5 z-[150] max-h-[50vh] overflow-y-auto">
-                    {chapters.map((ch, i) => (
-                      <button 
-                        key={ch.id} 
-                        onClick={() => {
-                          playSound('flip');
-                          setTurnDirection(ch.spreadIdx > safeSpreadIdx ? 1 : -1);
-                          setCurrentPageIdx(ch.spreadIdx);
-                          setShowChapters(false);
-                        }}
-                        onMouseEnter={() => playSound('hover')}
-                        className="w-full text-left px-4 py-3 hover:bg-black/5 dark:hover:bg-white/10 transition-colors group"
-                      >
-                         <p className="font-serif text-sm dark:text-white font-medium">{ch.title}</p>
-                         <p className="text-xs opacity-50 dark:text-gray-400 mt-1">{ch.date}</p>
-                      </button>
-                    ))}
+                  {chapters.map((ch, i) => (
+                    <button
+                      key={ch.id}
+                      onClick={() => {
+                        playSound('flip');
+                        setTurnDirection(ch.spreadIdx > safeSpreadIdx ? 1 : -1);
+                        setCurrentPageIdx(ch.spreadIdx);
+                        setShowChapters(false);
+                      }}
+                      onMouseEnter={() => playSound('hover')}
+                      className="w-full text-left px-4 py-3 hover:bg-black/5 dark:hover:bg-white/10 transition-colors group"
+                    >
+                      <p className="font-serif text-sm dark:text-white font-medium">{ch.title}</p>
+                      <p className="text-xs opacity-50 dark:text-gray-400 mt-1">{ch.date}</p>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
           )}
         </div>
-        
+
         <div className="text-center px-4">
           <h2 className="text-2xl sm:text-3xl font-serif dark:text-white truncate">{book.title}</h2>
           <p className="text-xs uppercase tracking-widest opacity-50 dark:text-gray-400 mt-1">
@@ -559,7 +568,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
 
         <div className="w-24 flex justify-end">
           {(!isEditing && pages.length === 0) || (!isEditing && user) ? (
-            <button 
+            <button
               onClick={startNewPage}
               onMouseEnter={() => playSound('hover')}
               className="p-3 bg-white dark:bg-[#1a1a1a] border border-[#ece6da] dark:border-[#333] hover:bg-[#fdfaf6] dark:hover:bg-[#222] rounded-full transition-all shadow-sm group relative z-50 text-black dark:text-white"
@@ -570,7 +579,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
         </div>
       </div>
 
-      <div 
+      <div
         className="flex-1 flex justify-center perspective-[3000px] items-center overflow-hidden w-full relative"
         onTouchStart={(e) => {
           if (isEditing) return;
@@ -603,7 +612,7 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
                   <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-black/20 dark:from-black/60 via-transparent to-transparent pointer-events-none mix-blend-multiply dark:mix-blend-normal z-40" />
                   {safeSpreadIdx === 0 ? renderPageContent('cover', 'left') : renderPageContent(leftPage, 'left')}
                 </div>
-                
+
                 <div className="flex-1 relative bg-[#fffff8] dark:bg-[#1e1e1e] rounded-r-2xl border-y border-r border-black/5 dark:border-white/5 flex flex-col p-6 sm:p-12 overflow-hidden shadow-[inset_20px_0_40px_rgba(0,0,0,0.04),0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[inset_20px_0_40px_rgba(0,0,0,0.3),0_20px_50px_rgba(0,0,0,0.3)]">
                   <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-black/20 dark:from-black/60 via-transparent to-transparent pointer-events-none mix-blend-multiply dark:mix-blend-normal z-40" />
                   {rightPage === 'editing' ? renderEditor() : renderPageContent(rightPage, 'right')}
@@ -613,10 +622,10 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
               </>
             ) : (
               <>
-                 <div className="flex-1 relative flex flex-col p-6 sm:p-12 overflow-hidden">
-                   <div className="absolute left-0 top-0 bottom-0 w-8 md:w-12 bg-gradient-to-r from-black/20 dark:from-black/40 via-black/5 to-transparent pointer-events-none mix-blend-multiply dark:mix-blend-normal z-40" />
-                   {rightPage === 'editing' ? renderEditor() : renderPageContent(rightPage, 'single')}
-                 </div>
+                <div className="flex-1 relative flex flex-col p-6 sm:p-12 overflow-hidden">
+                  <div className="absolute left-0 top-0 bottom-0 w-8 md:w-12 bg-gradient-to-r from-black/20 dark:from-black/40 via-black/5 to-transparent pointer-events-none mix-blend-multiply dark:mix-blend-normal z-40" />
+                  {rightPage === 'editing' ? renderEditor() : renderPageContent(rightPage, 'single')}
+                </div>
               </>
             )}
 
@@ -628,24 +637,24 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
         {!isEditing && (
           <>
             {safeSpreadIdx > 0 && (
-              <div 
+              <div
                 onClick={handlePrevPage}
-                 onMouseEnter={() => playSound('hover')}
+                onMouseEnter={() => playSound('hover')}
                 className="absolute left-0 top-0 bottom-0 w-20 sm:w-1/4 z-50 cursor-[w-resize] group"
               >
                 <div className="absolute left-2 sm:left-[5%] top-1/2 -translate-y-1/2 p-2 sm:p-4 text-[#4a3f35] dark:text-white opacity-0 group-hover:opacity-100 sm:group-hover:-translate-x-2 transition-all drop-shadow-md pointer-events-none">
-                   <ChevronLeft size={64} strokeWidth={1} />
+                  <ChevronLeft size={64} strokeWidth={1} />
                 </div>
               </div>
             )}
             {safeSpreadIdx < totalSpreads - 1 && (
-              <div 
+              <div
                 onClick={handleNextPage}
                 onMouseEnter={() => playSound('hover')}
                 className="absolute right-0 top-0 bottom-0 w-20 sm:w-1/4 z-50 cursor-[e-resize] group"
               >
                 <div className="absolute right-2 sm:right-[5%] top-1/2 -translate-y-1/2 p-2 sm:p-4 text-[#4a3f35] dark:text-white opacity-0 group-hover:opacity-100 sm:group-hover:translate-x-2 transition-all drop-shadow-md pointer-events-none">
-                   <ChevronRight size={64} strokeWidth={1} />
+                  <ChevronRight size={64} strokeWidth={1} />
                 </div>
               </div>
             )}
@@ -654,18 +663,18 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
       </div>
 
       {isEditing && (
-        <motion.div 
+        <motion.div
           initial={{ y: 50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex gap-4 w-max px-6 py-3 bg-white/95 dark:bg-[#111]/95 backdrop-blur-xl rounded-full shadow-2xl border border-black/5 dark:border-white/10"
         >
-          <button 
+          <button
             onClick={() => { playSound('click'); setIsEditing(false); }}
             className="px-6 py-2 bg-transparent text-[#4a3f35] dark:text-white rounded-full hover:bg-gray-100 dark:hover:bg-[#333] transition-all text-sm font-medium uppercase tracking-widest"
           >
             Discard
           </button>
-          <button 
+          <button
             onClick={savePage}
             disabled={uploading}
             className="px-8 py-2 bg-[#1a1a1a] dark:bg-[#e0e0e0] text-white dark:text-[#121212] rounded-full shadow-md hover:shadow-xl hover:scale-105 transition-all flex items-center gap-2 text-sm font-bold uppercase tracking-widest disabled:opacity-50 disabled:hover:scale-100"
@@ -681,15 +690,15 @@ export const DiaryLayout: React.FC<Props> = ({ book, onBack }) => {
 
 const DecoratedImage = ({ url, playSound }: { url: string, playSound: any }) => {
   return (
-    <div 
+    <div
       className="relative inline-block mx-2 my-2 cursor-pointer group"
       onClick={() => playSound('imageClick')}
       onMouseEnter={() => playSound('hover')}
     >
       <div className="bg-white dark:bg-[#e0e0e0] p-2 shadow-[0_4px_15px_rgba(0,0,0,0.1)] transform group-hover:scale-[1.02] transition-all duration-300 ease-out group-hover:rotate-1 rounded-sm">
-        <img 
-          src={url} 
-          alt="Memory" 
+        <img
+          src={url}
+          alt="Memory"
           className="max-w-full max-h-[35vh] object-contain rounded-sm"
           referrerPolicy="no-referrer"
           onError={(e) => (e.currentTarget.src = 'https://picsum.photos/seed/broken/400/300?blur=10')}
